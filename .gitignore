@@ -1,0 +1,11 @@
+/Debug/
+/Release/
+/x64/
+/SoftRenderer/Debug/
+/SoftRenderer/Release/
+/SoftRenderer/x64/
+/SoftRenderer/*.dll
+*.opensdf
+*.sdf
+*.suo
+*.vcxproj.user
