@@ -125,10 +125,10 @@ namespace video
 
     glm::vec2 device::project(const glm::vec3& _position, const glm::mat4& _translationMatrix)
     {
-        //auto point = _translationMatrix * glm::vec4(_position, 1.f);
-        auto point = glm::vec4(_position, 1.f) * _translationMatrix;
+        auto point = _translationMatrix * glm::vec4(_position, 1.f);
+        //auto point = glm::vec4(_position, 1.f) * _translationMatrix;
         float32 x = point.x * m_width + m_width / 2.f;
-        float32 y = point.y * m_height + m_height / 2.f;
+        float32 y = -point.y * m_height + m_height / 2.f;
         return glm::vec2(x, y);
     }
 
@@ -139,8 +139,8 @@ namespace video
 
     void device::render(const camera& _camera, mesh* _meshes, int _meshCount)
     {
-        auto viewMatrix = glm::lookAtLH(_camera.m_position, _camera.m_target, glm::vec3(0.f, 1.f, 0.f));
-        auto projectionMatrix = glm::perspectiveFovRH(1.5708f, (float32)m_width, (float32)m_height, 0.1f, 1000.f);
+        auto viewMatrix = glm::lookAt(_camera.m_position, _camera.m_target, glm::vec3(0.f, 1.f, 0.f));
+        auto projectionMatrix = glm::perspective(1.75f, (float32)m_width / (float32)m_height, 0.1f, 1000.f);
 
         for (int i = 0; i < _meshCount; ++i) {
             glm::mat4 rotation = glm::rotate(glm::mat4(1.f), _meshes[i].m_rotation.y, glm::vec3(0.f, 1.f, 0.f));
@@ -148,12 +148,12 @@ namespace video
             rotation = glm::rotate(rotation, _meshes[i].m_rotation.z, glm::vec3(0.f, 0.f, 1.f));
 
             glm::mat4 translation = glm::translate(glm::mat4(1.f), _meshes[i].m_position);
-            auto worldMatrix = rotation * translation;
+            auto worldMatrix = translation * rotation;
 
-            //auto transformMatrix = projectionMatrix * viewMatrix * worldMatrix;
-            auto transformMatrix = worldMatrix * viewMatrix * projectionMatrix;
+            auto transformMatrix = projectionMatrix * viewMatrix;
 
             for (auto vertex : _meshes[i].m_vertices) {
+                //auto point = glm::project(vertex, viewMatrix * worldMatrix, projectionMatrix, glm::vec4(0.f, (float32)m_width, 0.f, (float32)m_height));
                 auto point = project(vertex, transformMatrix);
                 draw_point(point);
             }
@@ -189,6 +189,11 @@ int main(int argc, char* argv[])
     };
     video::mesh cubeMesh(vertices, 8);
 
+    for (auto v : vertices) {
+        std::cout << "-----------------------\n";
+        std::cout << v.x << ", " << v.y << ", " << v.z << std::endl;
+    }
+
     bool isRunning = true;
 
     video::camera defaultCamera;
@@ -219,8 +224,9 @@ int main(int argc, char* argv[])
 
         device.render(defaultCamera, &cubeMesh, 1);
 
-        //defaultCamera.m_position.z += 0.1f;
-        //cubeMesh.m_position.x += 0.0001f;
+        defaultCamera.m_position.z += 0.01f;
+        defaultCamera.m_target.z += 0.0001f;
+        cubeMesh.m_position.z += 0.0001f;
         cubeMesh.m_rotation.x += 0.0005f;
         cubeMesh.m_rotation.y += 0.0005f;
 
@@ -233,6 +239,8 @@ int main(int argc, char* argv[])
         SDL_FreeSurface(surface);
 
         SDL_RenderPresent(renderer);
+
+        //SDL_Delay(10000);
     }
 
     SDL_DestroyRenderer(renderer);
