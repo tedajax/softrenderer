@@ -125,8 +125,9 @@ namespace video
 
     glm::vec2 device::project(const glm::vec3& _position, const glm::mat4& _translationMatrix)
     {
+        auto v4 = glm::vec4(_position, 1.f);
         auto point = _translationMatrix * glm::vec4(_position, 1.f);
-        //auto point = glm::vec4(_position, 1.f) * _translationMatrix;
+        point /= point.w;
         float32 x = point.x * m_width + m_width / 2.f;
         float32 y = -point.y * m_height + m_height / 2.f;
         return glm::vec2(x, y);
@@ -150,10 +151,9 @@ namespace video
             glm::mat4 translation = glm::translate(glm::mat4(1.f), _meshes[i].m_position);
             auto worldMatrix = translation * rotation;
 
-            auto transformMatrix = projectionMatrix * viewMatrix;
+            auto transformMatrix = projectionMatrix * viewMatrix * worldMatrix;
 
             for (auto vertex : _meshes[i].m_vertices) {
-                //auto point = glm::project(vertex, viewMatrix * worldMatrix, projectionMatrix, glm::vec4(0.f, (float32)m_width, 0.f, (float32)m_height));
                 auto point = project(vertex, transformMatrix);
                 draw_point(point);
             }
@@ -172,10 +172,10 @@ int main(int argc, char* argv[])
     SDL_Window* window = SDL_CreateWindow("Soft Renderer", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, constants::width, constants::height, SDL_WINDOW_SHOWN);
     SDL_Renderer* renderer = SDL_CreateRenderer(window, 0, SDL_RENDERER_ACCELERATED);
 
-    const int pixelSize = 1;
+    const int pixelSize = 8;
     video::device device(constants::width / pixelSize, constants::height / pixelSize);
 
-    const float halfSize = 0.2f;
+    const float halfSize = 1.f;
 
     glm::vec3 vertices[8] = {
         { -halfSize, halfSize, halfSize },
@@ -188,11 +188,6 @@ int main(int argc, char* argv[])
         { halfSize, -halfSize, -halfSize },
     };
     video::mesh cubeMesh(vertices, 8);
-
-    for (auto v : vertices) {
-        std::cout << "-----------------------\n";
-        std::cout << v.x << ", " << v.y << ", " << v.z << std::endl;
-    }
 
     bool isRunning = true;
 
@@ -224,9 +219,11 @@ int main(int argc, char* argv[])
 
         device.render(defaultCamera, &cubeMesh, 1);
 
-        defaultCamera.m_position.z += 0.01f;
-        defaultCamera.m_target.z += 0.0001f;
-        cubeMesh.m_position.z += 0.0001f;
+        //defaultCamera.m_position.z += 0.01f;
+        //defaultCamera.m_target.z += 0.0001f;
+        //cubeMesh.m_position.z += 0.0001f;
+        //cubeMesh.m_position.y += 0.0001f;
+        //cubeMesh.m_position.x += 0.0001f;
         cubeMesh.m_rotation.x += 0.0005f;
         cubeMesh.m_rotation.y += 0.0005f;
 
