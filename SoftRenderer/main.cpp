@@ -50,21 +50,38 @@ namespace video
     class mesh
     {
     public:
-        mesh(glm::vec3* _vertices, int _vertCount);
+        mesh(glm::vec3* _vertices, int _vertCount, uint16* _indices, int _faceCount);
         ~mesh();
+
+        struct face
+        {
+            uint16 m_a, m_b, m_c;
+
+            face(uint16 _a, uint16 _b, uint16 _c) : m_a(_a), m_b(_b), m_c(_c) { }
+        };
 
     public:
         std::vector<glm::vec3> m_vertices;
+        std::vector<face> m_faces;
         glm::vec3 m_position;
         glm::vec3 m_rotation;
     };
 
-    mesh::mesh(glm::vec3* _vertices, int _vertCount)
+    mesh::mesh(glm::vec3* _vertices, int _vertCount, uint16* _indices, int _faceCount)
         : m_position(glm::vec3(0.f, 0.f, 0.f)),
         m_rotation(glm::vec3(0.f, 0.f, 0.f))
     {
         for (int i = 0; i < _vertCount; ++i) {
             m_vertices.push_back(_vertices[i]);
+        }
+
+        for (int i = 0; i < _faceCount; ++i) {
+            mesh::face face = {
+                _indices[(i * 3) + 0],
+                _indices[(i * 3) + 1],
+                _indices[(i * 3) + 2],
+            };
+            m_faces.push_back(face);
         }
     }
 
@@ -89,6 +106,7 @@ namespace video
         void clear(uint32 _value = 0xFF000000);
         void poke(int _index, uint32 _value);
         void draw_point(const glm::vec2& _position);
+        void draw_line(const glm::vec2& _start, const glm::vec2& _end);
         glm::vec2 project(const glm::vec3& _position, const glm::mat4& _translationMatrix);
 
         SDL_Surface* create_surface();
@@ -123,6 +141,40 @@ namespace video
         }
     }
 
+    void device::draw_line(const glm::vec2& _start, const glm::vec2& _end)
+    {
+        glm::ivec2 istart(_start);
+        glm::ivec2 iend(_end);
+
+        auto delta = glm::abs(iend - istart);
+        auto sx = (istart.x < iend.x) ? 1 : -1;
+        auto sy = (istart.y < iend.y) ? 1 : -1;
+        auto err = delta.x - delta.y;
+
+        glm::ivec2 icurrent = istart;
+
+
+        while (true) {
+            draw_point(glm::vec2(icurrent));
+
+            if (icurrent == iend) {
+                break;
+            }
+
+            auto e2 = err * 2;
+
+            if (e2 > -delta.y) {
+                err -= delta.y;
+                icurrent.x += sx;
+            }
+
+            if (e2 < delta.x) {
+                err += delta.x;
+                icurrent.y += sy;
+            }
+        }
+    }
+
     glm::vec2 device::project(const glm::vec3& _position, const glm::mat4& _translationMatrix)
     {
         auto v4 = glm::vec4(_position, 1.f);
@@ -153,9 +205,18 @@ namespace video
 
             auto transformMatrix = projectionMatrix * viewMatrix * worldMatrix;
 
-            for (auto vertex : _meshes[i].m_vertices) {
-                auto point = project(vertex, transformMatrix);
-                draw_point(point);
+            for (auto face : _meshes[i].m_faces) {
+                auto vertexA = _meshes[i].m_vertices[face.m_a];
+                auto vertexB = _meshes[i].m_vertices[face.m_b];
+                auto vertexC = _meshes[i].m_vertices[face.m_c];
+
+                auto pointA = project(vertexA, transformMatrix);
+                auto pointB = project(vertexB, transformMatrix);
+                auto pointC = project(vertexC, transformMatrix);
+
+                draw_line(pointA, pointB);
+                draw_line(pointB, pointC);
+                draw_line(pointA, pointC);
             }
         }
     }
@@ -172,22 +233,38 @@ int main(int argc, char* argv[])
     SDL_Window* window = SDL_CreateWindow("Soft Renderer", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, constants::width, constants::height, SDL_WINDOW_SHOWN);
     SDL_Renderer* renderer = SDL_CreateRenderer(window, 0, SDL_RENDERER_ACCELERATED);
 
-    const int pixelSize = 8;
+    const int pixelSize = 4;
     video::device device(constants::width / pixelSize, constants::height / pixelSize);
 
-    const float halfSize = 1.f;
+    const float halfSize = 2.f;
 
     glm::vec3 vertices[8] = {
         { -halfSize, halfSize, halfSize },
         { halfSize, halfSize, halfSize },
         { -halfSize, -halfSize, halfSize },
-        { -halfSize, -halfSize, -halfSize },
+        { halfSize, -halfSize, halfSize },
         { -halfSize, halfSize, -halfSize },
         { halfSize, halfSize, -halfSize },
-        { halfSize, -halfSize, halfSize },
         { halfSize, -halfSize, -halfSize },
+        { -halfSize, -halfSize, -halfSize },
     };
-    video::mesh cubeMesh(vertices, 8);
+
+    uint16 indices[12 * 3] = {
+        0, 1, 2,
+        1, 2, 3,
+        1, 3, 6,
+        1, 5, 6,
+        0, 1, 4,
+        1, 4, 5,
+        2, 3, 7,
+        3, 6, 7,
+        0, 2, 7,
+        0, 4, 7,
+        4, 5, 6,
+        4, 6, 7
+    };
+
+    video::mesh cubeMesh(vertices, 8, indices, 12);
 
     bool isRunning = true;
 
@@ -221,11 +298,11 @@ int main(int argc, char* argv[])
 
         //defaultCamera.m_position.z += 0.01f;
         //defaultCamera.m_target.z += 0.0001f;
-        //cubeMesh.m_position.z += 0.0001f;
+        //cubeMesh.m_position.z -= 0.1f;
         //cubeMesh.m_position.y += 0.0001f;
         //cubeMesh.m_position.x += 0.0001f;
-        cubeMesh.m_rotation.x += 0.0005f;
-        cubeMesh.m_rotation.y += 0.0005f;
+        cubeMesh.m_rotation.x += 0.0001f;
+        cubeMesh.m_rotation.y += 0.0001f;
 
         SDL_Surface* surface = device.create_surface();
         SDL_Texture* texture = SDL_CreateTextureFromSurface(renderer, surface);
