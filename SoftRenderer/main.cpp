@@ -2,12 +2,12 @@
 #include <iostream>
 #include <vector>
 #include <algorithm>
+#include <array>
 #include <SDL2/SDL.h>
 #include <glm/vec2.hpp>
 #include <glm/vec3.hpp>
 #include <glm/mat4x4.hpp>
 #include <glm/gtc/matrix_transform.hpp>
-#include <DirectXMath.h>
 
 typedef int8_t int8;
 typedef int16_t int16;
@@ -36,7 +36,7 @@ namespace video
         uint8 m_b = 0;
 
         color(uint8 _r, uint8 _g, uint8 _b, uint8 _a = 255)
-            : m_r(_r), m_g(_g), m_b(_b), m_a(_a)
+            : m_a(_a), m_r(_r), m_g(_g), m_b(_b)
         {
         }
     };
@@ -107,11 +107,20 @@ namespace video
         void poke(int _index, uint32 _value);
         void draw_point(const glm::vec2& _position);
         void draw_line(const glm::vec2& _start, const glm::vec2& _end);
+        void draw_hline(int _y, int _left, int _right);
+        void draw_triangle(const glm::vec2& _v1, const glm::vec2& _v2, const glm::vec2& _v3);
         glm::vec2 project(const glm::vec3& _position, const glm::mat4& _translationMatrix);
 
         SDL_Surface* create_surface();
 
-        int index_from_xy(int _x, int _y) const { return m_width * _y + _x; }
+        int index_from_xy(int _x, int _y) const
+        {
+            int result = m_width * _y + _x;
+            if (result < 0 || result >= m_width * m_height) {
+                return -1;
+            }
+            return result;
+        }
 
         void render(const camera& _camera, mesh* _meshes, int _meshCount);
 
@@ -146,6 +155,11 @@ namespace video
         glm::ivec2 istart(_start);
         glm::ivec2 iend(_end);
 
+        if (istart.y == iend.y) {
+            draw_hline(istart.y, istart.x, iend.x);
+            return;
+        }
+
         auto delta = glm::abs(iend - istart);
         auto sx = (istart.x < iend.x) ? 1 : -1;
         auto sy = (istart.y < iend.y) ? 1 : -1;
@@ -175,9 +189,49 @@ namespace video
         }
     }
 
+    void device::draw_hline(int _y, int _left, int _right)
+    {
+        if (_y < 0 || _y >= m_height) {
+            return;
+        }
+
+        int left = _left;
+        int right = _right;
+
+        if (_right < _left) {
+            left = _right;
+            right = _left;
+        }
+
+        left = std::max(left, 0);
+        right = std::min(right, m_height - 1);
+
+        for (int i = left; i <= right; ++i) {
+            int index = index_from_xy(i, _y);
+            poke(index, 0xFFFFFF00);
+        }
+    }
+
+    void device::draw_triangle(const glm::vec2& _v1, const glm::vec2& _v2, const glm::vec2& _v3)
+    {
+        std::array<glm::vec2, 3> verts = {
+            _v1, _v2, _v3
+        };
+
+        std::sort(verts.begin(), verts.end(), [](const glm::vec2& _a, const glm::vec2& _b) {
+            return _a.y < _b.y;
+        });
+
+        auto top = verts[0];
+        auto mid = verts[1];
+        auto bot = verts[2];
+
+        std::cout << top.x << " " << top.y << std::endl;
+        std::cout << mid.x << " " << mid.y << std::endl;
+    }
+
     glm::vec2 device::project(const glm::vec3& _position, const glm::mat4& _translationMatrix)
     {
-        auto v4 = glm::vec4(_position, 1.f);
         auto point = _translationMatrix * glm::vec4(_position, 1.f);
         point /= point.w;
         float32 x = point.x * m_width + m_width / 2.f;
@@ -301,8 +355,8 @@ int main(int argc, char* argv[])
         //cubeMesh.m_position.z -= 0.1f;
         //cubeMesh.m_position.y += 0.0001f;
         //cubeMesh.m_position.x += 0.0001f;
-        cubeMesh.m_rotation.x += 0.0001f;
-        cubeMesh.m_rotation.y += 0.0001f;
+        cubeMesh.m_rotation.x += 0.0023f;
+        cubeMesh.m_rotation.y += 0.001f;
 
         SDL_Surface* surface = device.create_surface();
         SDL_Texture* texture = SDL_CreateTextureFromSurface(renderer, surface);

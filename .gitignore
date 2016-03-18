@@ -5,7 +5,9 @@
 /SoftRenderer/Release/
 /SoftRenderer/x64/
 /SoftRenderer/*.dll
+/obj/
 *.opensdf
 *.sdf
 *.suo
 *.vcxproj.user
+/soft
