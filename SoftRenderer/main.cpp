@@ -152,6 +152,7 @@ namespace video
             delete m_depthBuffer;
         }
 
+        void resize(int _width, int _height);
         void clear(uint32 _value = 0xFF000000);
         void poke(int _index, uint32 _value);
         void put_pixel(int _x, int _y, float32 _depth, const color& _color);
@@ -180,6 +181,20 @@ namespace video
         uint32* m_buffer = nullptr;
         float32* m_depthBuffer = nullptr;
     };
+
+    void device::resize(int _width, int _height)
+    {
+        m_width = _width;
+        m_height = _height;
+
+        delete m_buffer;
+        delete m_depthBuffer;
+
+        m_buffer = new uint32[m_width * m_height];
+        m_depthBuffer = new float32[m_width * m_height];
+
+        clear();
+    }
 
     void device::clear(uint32 _value /* = 0xFF000000 */)
     {
@@ -217,15 +232,15 @@ namespace video
 
     void device::draw_line(const glm::vec3& _start, const glm::vec3& _end, const color& _color)
     {
-        glm::vec3 start(_start);
-        glm::vec3 end(_end);
+        glm::ivec3 start(_start);
+        glm::ivec3 end(_end);
 
         auto delta = glm::abs(end - start);
         auto sx = (start.x < end.x) ? 1 : -1;
         auto sy = (start.y < end.y) ? 1 : -1;
         auto err = delta.x - delta.y;
 
-        glm::vec3 current = start;
+        glm::ivec3 current = start;
 
         while (true) {
             draw_point(glm::vec3(current), _color);
@@ -264,6 +279,9 @@ namespace video
         if (right < left) {
             std::swap(left, right);
         }
+        else if (left == right) {
+            draw_point(glm::vec3(left, _y, _leftz), _color);
+        }
 
         int distance = right - left;
         for (int x = left; x < right; ++x) {
@@ -278,7 +296,7 @@ namespace video
     void device::draw_triangle(const glm::vec3& _v1, const glm::vec3& _v2, const glm::vec3& _v3, const color& _color)
     {
         std::array<glm::vec3, 3> verts = {
-            _v1, _v2, _v3
+            { _v1, _v2, _v3 }
         };
 
         std::sort(verts.begin(), verts.end(), [](const glm::ivec3& _a, const glm::ivec3& _b) {
@@ -363,7 +381,10 @@ namespace video
                 auto pointB = project(vertexB, transformMatrix);
                 auto pointC = project(vertexC, transformMatrix);
 
-                draw_triangle(pointA, pointB, pointC, (count++ % 2 == 0) ? color::s_yellow : color::s_cyan);
+                // draw_triangle(pointA, pointB, pointC, (count++ % 2 == 0) ? color::s_yellow : color::s_cyan);
+                draw_line(pointA, pointB, color::s_yellow);
+                draw_line(pointA, pointC, color::s_yellow);
+                draw_line(pointB, pointC, color::s_yellow);
             }
         }
     }
@@ -380,10 +401,10 @@ int main(int argc, char* argv[])
     SDL_Window* window = SDL_CreateWindow("Soft Renderer", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, constants::width, constants::height, SDL_WINDOW_SHOWN);
     SDL_Renderer* renderer = SDL_CreateRenderer(window, 0, SDL_RENDERER_ACCELERATED);
 
-    const int pixelSize = 4;
+    int pixelSize = 1;
     video::device device(constants::width / pixelSize, constants::height / pixelSize);
 
-    const float halfSize = 2.f;
+    const float halfSize = 3.f;
 
     glm::vec3 vertices[8] = {
         { -halfSize, halfSize, halfSize },
@@ -419,31 +440,27 @@ int main(int argc, char* argv[])
     defaultCamera.m_position = glm::vec3(0.f, 0.f, 10.f);
     defaultCamera.m_target = glm::vec3(0.f, 0.f, 0.f);
 
-    float32 angle = 0.f;
-
-    glm::vec3 p1(constants::width / pixelSize / 2, constants::height / pixelSize / 2, 1);
-    glm::vec3 p2(p1.x - 20, p1.y + 20, 1);
-    glm::vec3 p3(p1.x + 20, p1.y + 20, 1);
-
     while (isRunning) {
         SDL_Event event;
         while (SDL_PollEvent(&event)) {
             switch (event.type) {
             case SDL_KEYDOWN:
-                if (event.key.keysym.scancode == SDL_SCANCODE_ESCAPE) {
-                    isRunning = false;
-                }
-                if (event.key.keysym.scancode == SDL_SCANCODE_I) {
-                    p3.y -= 1;
-                }
-                if (event.key.keysym.scancode == SDL_SCANCODE_K) {
-                    p3.y += 1;
-                }
-                if (event.key.keysym.scancode == SDL_SCANCODE_J) {
-                    p3.x -= 1;
-                }
-                if (event.key.keysym.scancode == SDL_SCANCODE_L) {
-                    p3.x += 1;
+                switch (event.key.keysym.scancode) {
+                    case SDL_SCANCODE_ESCAPE:
+                        isRunning = false;
+                        break;
+
+                    case SDL_SCANCODE_MINUS:
+                        pixelSize--;
+                        pixelSize = std::max(pixelSize, 1);
+                        device.resize(constants::width / pixelSize, constants::height / pixelSize);
+                        break;
+
+                    case SDL_SCANCODE_EQUALS:
+                        pixelSize++;
+                        pixelSize = std::min(pixelSize, 128);
+                        device.resize(constants::width / pixelSize, constants::height / pixelSize);
+                        break;
                 }
                 break;
 
@@ -460,7 +477,6 @@ int main(int argc, char* argv[])
         device.clear();
 
         device.render(defaultCamera, &cubeMesh, 1);
-        // device.draw_triangle(p1, p2, p3, video::color::s_magenta);
 
         cubeMesh.m_rotation.x += 0.0023f;
         cubeMesh.m_rotation.y += 0.001f;
