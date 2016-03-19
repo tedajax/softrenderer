@@ -264,18 +264,13 @@ namespace video
         {
             float32 leftdx = (float32)(bot.x - top.x) / (float32)(bot.y - top.y);
             float32 rightdx = (float32)(mid.x - top.x) / (float32)(mid.y - top.y);
-            float32 leftdz = (float32)(bot.z - top.z) / (float32)(bot.y - top.y);
-            float32 rightdz = (float32)(mid.z - top.z) / (float32)(bot.y - top.y);
 
             if (mid.x < top.x) {
                 std::swap(leftdx, rightdx);
-                std::swap(leftdz, rightdz);
             }
 
             float32 left, right;
             left = right = top.x;
-            float32 leftZ, rightZ;
-            leftZ = rightZ = top.z;
             for (int y = top.y; y < mid.y; ++y) {
                 for (int x = (int)left; x <= (int)right; ++x) {
                     float32 z = math::lerp(leftZ, rightZ, (float32)x / std::abs(right - left));
