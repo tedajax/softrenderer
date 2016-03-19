@@ -3,6 +3,7 @@
 #include <vector>
 #include <algorithm>
 #include <array>
+#include <limits>
 #include <SDL2/SDL.h>
 #include <glm/vec2.hpp>
 #include <glm/vec3.hpp>
@@ -26,6 +27,24 @@ typedef uint8 byte;
 
 typedef unsigned int uint;
 
+namespace math
+{
+    float32 clamp(float32 _value, float32 _min = 0.f, float32 _max = 1.f);
+    float32 lerp(float32 _a, float32 _b, float32 _t);
+
+    float32 clamp(float32 _value, float32 _min, float32 _max)
+    {
+        if (_value < _min) { return _min; }
+        else if (_value > _max) { return _max; }
+        else { return _value; }
+    }
+
+    float32 lerp(float32 _a, float32 _b, float32 _t)
+    {
+        return (_b - _a) * _t + _a;
+    }
+}
+
 namespace video
 {
     struct color
@@ -35,11 +54,39 @@ namespace video
         uint8 m_g = 0;
         uint8 m_b = 0;
 
+        color()
+            : m_a(255), m_r(255), m_g(255), m_b(255)
+        { }
+
         color(uint8 _r, uint8 _g, uint8 _b, uint8 _a = 255)
             : m_a(_a), m_r(_r), m_g(_g), m_b(_b)
-        {
-        }
+        { }
+
+        const static color s_white;
+        const static color s_black;
+        const static color s_red;
+        const static color s_green;
+        const static color s_blue;
+        const static color s_magenta;
+        const static color s_yellow;
+        const static color s_cyan;
     };
+
+    uint32 color_pack(const color& _color);
+
+    const color color::s_white = color{ 255, 255, 255 };
+    const color color::s_black = color{ 0, 0, 0 };
+    const color color::s_red = color{ 255, 0, 0 };
+    const color color::s_green = color{ 0, 255, 0 };
+    const color color::s_blue = color{ 0, 0, 255 };
+    const color color::s_magenta = color{ 255, 0, 255 };
+    const color color::s_yellow = color{ 255, 255, 0 };
+    const color color::s_cyan = color{ 0, 255, 255 };
+
+    uint32 color_pack(const color& _color)
+    {
+        return (_color.m_a << 24) | (_color.m_r << 16) | (_color.m_g << 8) | (_color.m_b << 0);
+    }
 
     struct camera
     {
@@ -57,7 +104,7 @@ namespace video
         {
             uint16 m_a, m_b, m_c;
 
-            face(uint16 _a, uint16 _b, uint16 _c) : m_a(_a), m_b(_b), m_c(_c) { }
+            face(uint16 _a, uint16 _b, uint16 _c) : m_a(_a), m_b(_b), m_c(_c) {}
         };
 
     public:
@@ -96,20 +143,22 @@ namespace video
             : m_width(_width), m_height(_height)
         {
             m_buffer = new uint32[m_width * m_height];
+            m_depthBuffer = new float32[m_width * m_height];
         }
 
         ~device()
         {
             delete m_buffer;
+            delete m_depthBuffer;
         }
 
         void clear(uint32 _value = 0xFF000000);
         void poke(int _index, uint32 _value);
-        void draw_point(const glm::vec2& _position);
-        void draw_line(const glm::vec2& _start, const glm::vec2& _end);
-        void draw_hline(int _y, int _left, int _right);
-        void draw_triangle(const glm::vec2& _v1, const glm::vec2& _v2, const glm::vec2& _v3);
-        glm::vec2 project(const glm::vec3& _position, const glm::mat4& _translationMatrix);
+        void put_pixel(int _x, int _y, float32 _depth, const color& _color);
+        void draw_point(const glm::vec3& _position, const color& _color);
+        void draw_line(const glm::vec3& _start, const glm::vec3& _end, const color& _color);
+        void draw_triangle(const glm::vec3& _v1, const glm::vec3& _v2, const glm::vec3& _v3, const color& _color);
+        glm::vec3 project(const glm::vec3& _position, const glm::mat4& _translationMatrix);
 
         SDL_Surface* create_surface();
 
@@ -128,6 +177,7 @@ namespace video
         int m_width = 0;
         int m_height = 0;
         uint32* m_buffer = nullptr;
+        float32* m_depthBuffer = nullptr;
     };
 
     void device::clear(uint32 _value /* = 0xFF000000 */)
@@ -135,6 +185,7 @@ namespace video
         int size = m_width * m_height;
         for (int i = 0; i < size; ++i) {
             m_buffer[i] = _value;
+            m_depthBuffer[i] = std::numeric_limits<float32>::max();
         }
     }
 
@@ -143,35 +194,42 @@ namespace video
         m_buffer[_index] = _value;
     }
 
-    void device::draw_point(const glm::vec2& _position)
+    void device::put_pixel(int _x, int _y, float32 _depth, const color& _color)
     {
-        if (_position.x >= 0 && _position.y >= 0 && _position.x < m_width && _position.y < m_height) {
-            poke(index_from_xy((int)_position.x, (int)_position.y), 0xFFFFFF00);
-        }
-    }
-
-    void device::draw_line(const glm::vec2& _start, const glm::vec2& _end)
-    {
-        glm::ivec2 istart(_start);
-        glm::ivec2 iend(_end);
-
-        if (istart.y == iend.y) {
-            draw_hline(istart.y, istart.x, iend.x);
+        int index = index_from_xy(_x, _y);
+        if (index < 0) {
             return;
         }
 
-        auto delta = glm::abs(iend - istart);
-        auto sx = (istart.x < iend.x) ? 1 : -1;
-        auto sy = (istart.y < iend.y) ? 1 : -1;
+        if (m_depthBuffer[index] < _depth) {
+            return;
+        }
+
+        m_depthBuffer[index] = _depth;
+        poke(index, color_pack(_color));
+    }
+
+    void device::draw_point(const glm::vec3& _position, const color& _color)
+    {
+        put_pixel((int)_position.x, (int)_position.y, _position.z, _color);
+    }
+
+    void device::draw_line(const glm::vec3& _start, const glm::vec3& _end, const color& _color)
+    {
+        glm::vec3 start(_start);
+        glm::vec3 end(_end);
+
+        auto delta = glm::abs(end - start);
+        auto sx = (start.x < end.x) ? 1 : -1;
+        auto sy = (start.y < end.y) ? 1 : -1;
         auto err = delta.x - delta.y;
 
-        glm::ivec2 icurrent = istart;
-
+        glm::vec3 current = start;
 
         while (true) {
-            draw_point(glm::vec2(icurrent));
+            draw_point(glm::vec3(current), _color);
 
-            if (icurrent == iend) {
+            if (current == end) {
                 break;
             }
 
@@ -179,46 +237,23 @@ namespace video
 
             if (e2 > -delta.y) {
                 err -= delta.y;
-                icurrent.x += sx;
+                current.x += sx;
             }
 
             if (e2 < delta.x) {
                 err += delta.x;
-                icurrent.y += sy;
+                current.y += sy;
             }
         }
     }
 
-    void device::draw_hline(int _y, int _left, int _right)
+    void device::draw_triangle(const glm::vec3& _v1, const glm::vec3& _v2, const glm::vec3& _v3, const color& _color)
     {
-        if (_y < 0 || _y >= m_height) {
-            return;
-        }
-
-        int left = _left;
-        int right = _right;
-
-        if (_right < _left) {
-            left = _right;
-            right = _left;
-        }
-
-        left = std::max(left, 0);
-        right = std::min(right, m_height - 1);
-
-        for (int i = left; i <= right; ++i) {
-            int index = index_from_xy(i, _y);
-            poke(index, 0xFFFFFF00);
-        }
-    }
-
-    void device::draw_triangle(const glm::vec2& _v1, const glm::vec2& _v2, const glm::vec2& _v3)
-    {
-        std::array<glm::vec2, 3> verts = {
+        std::array<glm::vec3, 3> verts = {
             _v1, _v2, _v3
         };
 
-        std::sort(verts.begin(), verts.end(), [](const glm::vec2& _a, const glm::vec2& _b) {
+        std::sort(verts.begin(), verts.end(), [](const glm::ivec3& _a, const glm::ivec3& _b) {
             return _a.y < _b.y;
         });
 
@@ -226,17 +261,58 @@ namespace video
         auto mid = verts[1];
         auto bot = verts[2];
 
-        std::cout << top.x << " " << top.y << std::endl;
-        std::cout << mid.x << " " << mid.y << std::endl;
+        {
+            float32 leftdx = (float32)(bot.x - top.x) / (float32)(bot.y - top.y);
+            float32 rightdx = (float32)(mid.x - top.x) / (float32)(mid.y - top.y);
+            float32 leftdz = (float32)(bot.z - top.z) / (float32)(bot.y - top.y);
+            float32 rightdz = (float32)(mid.z - top.z) / (float32)(bot.y - top.y);
+
+            if (mid.x < top.x) {
+                std::swap(leftdx, rightdx);
+                std::swap(leftdz, rightdz);
+            }
+
+            float32 left, right;
+            left = right = top.x;
+            float32 leftZ, rightZ;
+            leftZ = rightZ = top.z;
+            for (int y = top.y; y < mid.y; ++y) {
+                for (int x = (int)left; x <= (int)right; ++x) {
+                    float32 z = math::lerp(leftZ, rightZ, (float32)x / std::abs(right - left));
+                    draw_point(glm::vec3((float32)x, (float32)y, z), _color);
+                }
+                left += leftdx;
+                right += rightdx;
+                leftZ += leftdz;
+                rightZ += rightdz;
+            }
+        }
+
+        {
+            //float32 leftdx = (float32)(top.x - bot.x) / (float32)(top.y - bot.y);
+            //float32 rightdx = (float32)(mid.x - bot.x) / (float32)(mid.y - bot.y);
+
+            //if (mid.x < top.x) {
+            //    std::swap(leftdx, rightdx);
+            //}
+
+            //float32 left, right;
+            //left = right = (float32)bot.x;
+            //for (int y = bot.y; y >= mid.y; --y) {
+            //    draw_hline(y, (int)left, (int)right, _color);
+            //    left -= leftdx;
+            //    right -= rightdx;
+            //}
+        }
     }
 
-    glm::vec2 device::project(const glm::vec3& _position, const glm::mat4& _translationMatrix)
+    glm::vec3 device::project(const glm::vec3& _position, const glm::mat4& _translationMatrix)
     {
         auto point = _translationMatrix * glm::vec4(_position, 1.f);
         point /= point.w;
         float32 x = point.x * m_width + m_width / 2.f;
         float32 y = -point.y * m_height + m_height / 2.f;
-        return glm::vec2(x, y);
+        return glm::vec3(x, y, point.z);
     }
 
     SDL_Surface* device::create_surface()
@@ -259,6 +335,7 @@ namespace video
 
             auto transformMatrix = projectionMatrix * viewMatrix * worldMatrix;
 
+            int count = 0;
             for (auto face : _meshes[i].m_faces) {
                 auto vertexA = _meshes[i].m_vertices[face.m_a];
                 auto vertexB = _meshes[i].m_vertices[face.m_b];
@@ -268,9 +345,7 @@ namespace video
                 auto pointB = project(vertexB, transformMatrix);
                 auto pointC = project(vertexC, transformMatrix);
 
-                draw_line(pointA, pointB);
-                draw_line(pointB, pointC);
-                draw_line(pointA, pointC);
+                draw_triangle(pointA, pointB, pointC, (count++ % 2 == 0) ? color::s_yellow : color::s_cyan);
             }
         }
     }
@@ -326,6 +401,8 @@ int main(int argc, char* argv[])
     defaultCamera.m_position = glm::vec3(0.f, 0.f, 10.f);
     defaultCamera.m_target = glm::vec3(0.f, 0.f, 0.f);
 
+    float32 angle = 0.f;
+
     while (isRunning) {
         SDL_Event event;
         while (SDL_PollEvent(&event)) {
@@ -350,11 +427,6 @@ int main(int argc, char* argv[])
 
         device.render(defaultCamera, &cubeMesh, 1);
 
-        //defaultCamera.m_position.z += 0.01f;
-        //defaultCamera.m_target.z += 0.0001f;
-        //cubeMesh.m_position.z -= 0.1f;
-        //cubeMesh.m_position.y += 0.0001f;
-        //cubeMesh.m_position.x += 0.0001f;
         cubeMesh.m_rotation.x += 0.0023f;
         cubeMesh.m_rotation.y += 0.001f;
 
@@ -367,8 +439,6 @@ int main(int argc, char* argv[])
         SDL_FreeSurface(surface);
 
         SDL_RenderPresent(renderer);
-
-        //SDL_Delay(10000);
     }
 
     SDL_DestroyRenderer(renderer);
