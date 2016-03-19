@@ -158,6 +158,7 @@ namespace video
         void draw_point(const glm::vec3& _position, const color& _color);
         void draw_line(const glm::vec3& _start, const glm::vec3& _end, const color& _color);
         void draw_triangle(const glm::vec3& _v1, const glm::vec3& _v2, const glm::vec3& _v3, const color& _color);
+        void draw_hline(int _y, int _left, int _right, float32 _leftz, float32 _rightz, const color& _color);
         glm::vec3 project(const glm::vec3& _position, const glm::mat4& _translationMatrix);
 
         SDL_Surface* create_surface();
@@ -247,6 +248,33 @@ namespace video
         }
     }
 
+    void device::draw_hline(int _y, int _left, int _right, float32 _leftz, float32 _rightz, const color& _color)
+    {
+        if (_y < 0 || _y >= m_height) {
+            return;
+        }
+
+        int left = std::max(0, _left);
+        int right = std::min(_right, m_width);
+
+        if (left > m_width && right > m_width) {
+            std::cout << "what\n";
+        }
+
+        if (right < left) {
+            std::swap(left, right);
+        }
+
+        int distance = right - left;
+        for (int x = left; x < right; ++x) {
+            if (x < 0 || x >= m_width) {
+                continue;
+            }
+            glm::vec3 point((float32)x, (float32)_y, math::lerp(_leftz, _rightz, (float32)x / (float32)distance));
+            draw_point(point, _color);
+        }
+    }
+
     void device::draw_triangle(const glm::vec3& _v1, const glm::vec3& _v2, const glm::vec3& _v3, const color& _color)
     {
         std::array<glm::vec3, 3> verts = {
@@ -265,39 +293,34 @@ namespace video
             float32 leftdx = (float32)(bot.x - top.x) / (float32)(bot.y - top.y);
             float32 rightdx = (float32)(mid.x - top.x) / (float32)(mid.y - top.y);
 
-            if (mid.x < top.x) {
+            if (mid.x < bot.x) {
                 std::swap(leftdx, rightdx);
             }
 
-            float32 left, right;
-            left = right = top.x;
+            glm::vec3 left, right;
+            left = right = top;
             for (int y = top.y; y < mid.y; ++y) {
-                for (int x = (int)left; x <= (int)right; ++x) {
-                    float32 z = math::lerp(leftZ, rightZ, (float32)x / std::abs(right - left));
-                    draw_point(glm::vec3((float32)x, (float32)y, z), _color);
-                }
-                left += leftdx;
-                right += rightdx;
-                leftZ += leftdz;
-                rightZ += rightdz;
+                draw_hline(y, (int)left.x, (int)right.x, left.z, right.z, _color);
+                left.x += leftdx;
+                right.x += rightdx;
             }
         }
 
         {
-            //float32 leftdx = (float32)(top.x - bot.x) / (float32)(top.y - bot.y);
-            //float32 rightdx = (float32)(mid.x - bot.x) / (float32)(mid.y - bot.y);
+            float32 leftdx = (float32)(top.x - bot.x) / (float32)(top.y - bot.y);
+            float32 rightdx = (float32)(mid.x - bot.x) / (float32)(mid.y - bot.y);
 
-            //if (mid.x < top.x) {
-            //    std::swap(leftdx, rightdx);
-            //}
+            if (mid.x < top.x) {
+               std::swap(leftdx, rightdx);
+            }
 
-            //float32 left, right;
-            //left = right = (float32)bot.x;
-            //for (int y = bot.y; y >= mid.y; --y) {
-            //    draw_hline(y, (int)left, (int)right, _color);
-            //    left -= leftdx;
-            //    right -= rightdx;
-            //}
+            glm::vec3 left, right;
+            left = right = bot;
+            for (int y = bot.y; y >= mid.y; --y) {
+                draw_hline(y, (int)left.x, (int)right.x, left.z, right.z, _color);
+                left.x -= leftdx;
+                right.x -= rightdx;
+            }
         }
     }
 
@@ -398,6 +421,10 @@ int main(int argc, char* argv[])
 
     float32 angle = 0.f;
 
+    glm::vec3 p1(constants::width / pixelSize / 2, constants::height / pixelSize / 2, 1);
+    glm::vec3 p2(p1.x - 20, p1.y + 20, 1);
+    glm::vec3 p3(p1.x + 20, p1.y + 20, 1);
+
     while (isRunning) {
         SDL_Event event;
         while (SDL_PollEvent(&event)) {
@@ -405,6 +432,18 @@ int main(int argc, char* argv[])
             case SDL_KEYDOWN:
                 if (event.key.keysym.scancode == SDL_SCANCODE_ESCAPE) {
                     isRunning = false;
+                }
+                if (event.key.keysym.scancode == SDL_SCANCODE_I) {
+                    p3.y -= 1;
+                }
+                if (event.key.keysym.scancode == SDL_SCANCODE_K) {
+                    p3.y += 1;
+                }
+                if (event.key.keysym.scancode == SDL_SCANCODE_J) {
+                    p3.x -= 1;
+                }
+                if (event.key.keysym.scancode == SDL_SCANCODE_L) {
+                    p3.x += 1;
                 }
                 break;
 
@@ -421,6 +460,7 @@ int main(int argc, char* argv[])
         device.clear();
 
         device.render(defaultCamera, &cubeMesh, 1);
+        // device.draw_triangle(p1, p2, p3, video::color::s_magenta);
 
         cubeMesh.m_rotation.x += 0.0023f;
         cubeMesh.m_rotation.y += 0.001f;
