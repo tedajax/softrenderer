@@ -152,6 +152,12 @@ namespace video
             delete m_depthBuffer;
         }
 
+        enum class buffer_type
+        {
+            cColor,
+            cDepth,
+        };
+
         void resize(int _width, int _height);
         void clear(uint32 _value = 0xFF000000);
         void poke(int _index, uint32 _value);
@@ -162,7 +168,7 @@ namespace video
         void draw_hline(int _y, int _left, int _right, float32 _leftz, float32 _rightz, const color& _color);
         glm::vec3 project(const glm::vec3& _position, const glm::mat4& _translationMatrix);
 
-        SDL_Surface* create_surface();
+        SDL_Surface* create_surface(buffer_type _bufferType = buffer_type::cColor);
 
         int index_from_xy(int _x, int _y) const
         {
@@ -308,11 +314,14 @@ namespace video
         auto bot = verts[2];
 
         {
-            float32 leftdx = (float32)(bot.x - top.x) / (float32)(bot.y - top.y);
-            float32 rightdx = (float32)(mid.x - top.x) / (float32)(mid.y - top.y);
+            float32 leftdx = (bot.x - top.x) / (bot.y - top.y);
+            float32 rightdx = (mid.x - top.x) / (mid.y - top.y);
+            float32 leftdz = (bot.z - top.z) / (bot.y - top.y);
+            float32 rightdz = (mid.z - top.z) / (mid.y / top.y);
 
             if (mid.x < bot.x) {
                 std::swap(leftdx, rightdx);
+                std::swap(leftdz, rightdz);
             }
 
             glm::vec3 left, right;
@@ -321,15 +330,20 @@ namespace video
                 draw_hline(y, (int)left.x, (int)right.x, left.z, right.z, _color);
                 left.x += leftdx;
                 right.x += rightdx;
+                left.z += leftdz;
+                right.z += rightdz;
             }
         }
 
         {
-            float32 leftdx = (float32)(top.x - bot.x) / (float32)(top.y - bot.y);
-            float32 rightdx = (float32)(mid.x - bot.x) / (float32)(mid.y - bot.y);
+            float32 leftdx = (top.x - bot.x) / (top.y - bot.y);
+            float32 rightdx = (mid.x - bot.x) / (mid.y - bot.y);
+            float32 leftdz = (top.z - bot.z) / (top.y - bot.y);
+            float32 rightdz = (mid.z - bot.z) / (top.y - bot.y);
 
             if (mid.x < top.x) {
                std::swap(leftdx, rightdx);
+               std::swap(leftdz, rightdz);
             }
 
             glm::vec3 left, right;
@@ -338,6 +352,8 @@ namespace video
                 draw_hline(y, (int)left.x, (int)right.x, left.z, right.z, _color);
                 left.x -= leftdx;
                 right.x -= rightdx;
+                left.z -= leftdz;
+                right.z -= rightdz;
             }
         }
     }
@@ -351,9 +367,38 @@ namespace video
         return glm::vec3(x, y, point.z);
     }
 
-    SDL_Surface* device::create_surface()
+    SDL_Surface* device::create_surface(buffer_type _bufferType)
     {
-        return SDL_CreateRGBSurfaceFrom(m_buffer, m_width, m_height, 32, m_width * 4, 0x00FF0000, 0x0000FF00, 0x000000FF, 0xFF000000);
+        switch (_bufferType) {
+            default:
+            case buffer_type::cColor:
+                return SDL_CreateRGBSurfaceFrom(m_buffer, m_width, m_height, 32, m_width * 4, 0x00FF0000, 0x0000FF00, 0x000000FF, 0xFF000000);
+
+            case buffer_type::cDepth:
+                {
+                    float32 maxDepth = 0.f;
+                    for (int i = 0; i < m_width * m_height; ++i) {
+                        if (m_depthBuffer[i] < std::numeric_limits<float32>::max() && m_depthBuffer[i] > maxDepth) {
+                            maxDepth = m_depthBuffer[i];
+                        }
+                    }
+                    uint8* depth = new uint8[m_width * m_height];
+                    for (int i = 0; i < m_width * m_height; ++i) {
+                        if (m_depthBuffer[i] < std::numeric_limits<float32>::max()) {
+                            float32 d = m_depthBuffer[i] / maxDepth;
+                            std::cout << (uint8)(d * 255) << std::endl;
+                            depth[i] = (uint8)(d * 255);
+                        }
+                        else {
+                            depth[i] = 0x00;
+                        }
+                    }
+
+                    auto result = SDL_CreateRGBSurfaceFrom(depth, m_width, m_height, 8, m_width, 0x00, 0xFF, 0xFF, 0xFF);
+                    delete depth;
+                    return result;
+                }
+        }
     }
 
     void device::render(const camera& _camera, mesh* _meshes, int _meshCount)
@@ -381,10 +426,10 @@ namespace video
                 auto pointB = project(vertexB, transformMatrix);
                 auto pointC = project(vertexC, transformMatrix);
 
-                // draw_triangle(pointA, pointB, pointC, (count++ % 2 == 0) ? color::s_yellow : color::s_cyan);
-                draw_line(pointA, pointB, color::s_yellow);
-                draw_line(pointA, pointC, color::s_yellow);
-                draw_line(pointB, pointC, color::s_yellow);
+                draw_triangle(pointA, pointB, pointC, (count++ % 2 == 0) ? color::s_yellow : color::s_cyan);
+                // draw_line(pointA, pointB, color::s_yellow);
+                // draw_line(pointA, pointC, color::s_yellow);
+                // draw_line(pointB, pointC, color::s_yellow);
             }
         }
     }
@@ -401,7 +446,7 @@ int main(int argc, char* argv[])
     SDL_Window* window = SDL_CreateWindow("Soft Renderer", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, constants::width, constants::height, SDL_WINDOW_SHOWN);
     SDL_Renderer* renderer = SDL_CreateRenderer(window, 0, SDL_RENDERER_ACCELERATED);
 
-    int pixelSize = 1;
+    int pixelSize = 4;
     video::device device(constants::width / pixelSize, constants::height / pixelSize);
 
     const float halfSize = 3.f;
@@ -440,6 +485,14 @@ int main(int argc, char* argv[])
     defaultCamera.m_position = glm::vec3(0.f, 0.f, 10.f);
     defaultCamera.m_target = glm::vec3(0.f, 0.f, 0.f);
 
+    glm::vec3 pa1(constants::width / pixelSize / 2, 20, 3);
+    glm::vec3 pa2(pa1.x - 30, pa1.y + 40, 3);
+    glm::vec3 pa3(pa1.x + 30, pa1.y + 40, 3);
+
+    glm::vec3 pb1(pa1.x + 20, pa1.y, 5);
+    glm::vec3 pb2(pb1.x - 30, pb1.y + 45, 1);
+    glm::vec3 pb3(pb1.x + 30, pb1.y + 40, 5);
+
     while (isRunning) {
         SDL_Event event;
         while (SDL_PollEvent(&event)) {
@@ -461,6 +514,8 @@ int main(int argc, char* argv[])
                         pixelSize = std::min(pixelSize, 128);
                         device.resize(constants::width / pixelSize, constants::height / pixelSize);
                         break;
+                    default:
+                        break;
                 }
                 break;
 
@@ -476,12 +531,14 @@ int main(int argc, char* argv[])
 
         device.clear();
 
-        device.render(defaultCamera, &cubeMesh, 1);
+        // device.render(defaultCamera, &cubeMesh, 1);
+        device.draw_triangle(pa1, pa2, pa3, video::color::s_blue);
+        device.draw_triangle(pb1, pb2, pb3, video::color::s_green);
 
         cubeMesh.m_rotation.x += 0.0023f;
         cubeMesh.m_rotation.y += 0.001f;
 
-        SDL_Surface* surface = device.create_surface();
+        SDL_Surface* surface = device.create_surface(video::device::buffer_type::cDepth);
         SDL_Texture* texture = SDL_CreateTextureFromSurface(renderer, surface);
 
         SDL_RenderCopy(renderer, texture, nullptr, nullptr);
