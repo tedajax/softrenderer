@@ -5,6 +5,7 @@
 #include <array>
 #include <limits>
 #include <SDL2/SDL.h>
+#include <SDL2/SDL_image.h>
 #include <glm/vec2.hpp>
 #include <glm/vec3.hpp>
 #include <glm/mat4x4.hpp>
@@ -60,6 +61,10 @@ namespace video
 
         color(uint8 _r, uint8 _g, uint8 _b, uint8 _a = 255)
             : m_a(_a), m_r(_r), m_g(_g), m_b(_b)
+        { }
+
+        color(uint32 _int)
+            : m_a((_int & 0x000000FF) >> 24), m_r((_int & 0x00FF) >> 16), m_g((_int & 0x0000FF) >> 8), m_b(_int & 0xFF)
         { }
 
         const static color s_white;
@@ -168,6 +173,11 @@ namespace video
         void draw_hline(int _y, int _left, int _right, float32 _leftz, float32 _rightz, const color& _color);
         glm::vec3 project(const glm::vec3& _position, const glm::mat4& _translationMatrix);
 
+        uint32* get_colors() const { return m_buffer; }
+        int get_width() const { return m_width; }
+        int get_height() const { return m_height; }
+        int get_size() const { return m_width * m_height; }
+
         SDL_Surface* create_surface(buffer_type _bufferType = buffer_type::cColor);
 
         int index_from_xy(int _x, int _y) const
@@ -177,6 +187,12 @@ namespace video
                 return -1;
             }
             return result;
+        }
+
+        void xy_from_index(int _index, int& _x, int& _y) const
+        {
+            _x = _index % m_width;
+            _y = _index / m_width;
         }
 
         void render(const camera& _camera, mesh* _meshes, int _meshCount);
@@ -386,7 +402,6 @@ namespace video
                     for (int i = 0; i < m_width * m_height; ++i) {
                         if (m_depthBuffer[i] < std::numeric_limits<float32>::max()) {
                             float32 d = m_depthBuffer[i] / maxDepth;
-                            std::cout << (uint8)(d * 255) << std::endl;
                             depth[i] = (uint8)(d * 255);
                         }
                         else {
@@ -427,9 +442,9 @@ namespace video
                 auto pointC = project(vertexC, transformMatrix);
 
                 draw_triangle(pointA, pointB, pointC, (count++ % 2 == 0) ? color::s_yellow : color::s_cyan);
-                // draw_line(pointA, pointB, color::s_yellow);
-                // draw_line(pointA, pointC, color::s_yellow);
-                // draw_line(pointB, pointC, color::s_yellow);
+                //draw_line(pointA, pointB, color::s_yellow);
+                //draw_line(pointA, pointC, color::s_yellow);
+                //draw_line(pointB, pointC, color::s_yellow);
             }
         }
     }
@@ -437,8 +452,8 @@ namespace video
 
 namespace constants
 {
-    const int width = 800;
-    const int height = 600;
+    const int width = 1920;
+    const int height = 1080;
 }
 
 int main(int argc, char* argv[])
@@ -446,7 +461,7 @@ int main(int argc, char* argv[])
     SDL_Window* window = SDL_CreateWindow("Soft Renderer", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, constants::width, constants::height, SDL_WINDOW_SHOWN);
     SDL_Renderer* renderer = SDL_CreateRenderer(window, 0, SDL_RENDERER_ACCELERATED);
 
-    int pixelSize = 4;
+    int pixelSize = 30;
     video::device device(constants::width / pixelSize, constants::height / pixelSize);
 
     const float halfSize = 3.f;
@@ -493,6 +508,10 @@ int main(int argc, char* argv[])
     glm::vec3 pb2(pb1.x - 30, pb1.y + 45, 1);
     glm::vec3 pb3(pb1.x + 30, pb1.y + 40, 5);
 
+    SDL_Surface* shawnSurface = IMG_Load("shawn2.jpg");
+    SDL_Texture* shawnTexture = SDL_CreateTextureFromSurface(renderer, shawnSurface);
+    SDL_FreeSurface(shawnSurface);
+
     while (isRunning) {
         SDL_Event event;
         while (SDL_PollEvent(&event)) {
@@ -531,20 +550,37 @@ int main(int argc, char* argv[])
 
         device.clear();
 
-        // device.render(defaultCamera, &cubeMesh, 1);
-        device.draw_triangle(pa1, pa2, pa3, video::color::s_blue);
-        device.draw_triangle(pb1, pb2, pb3, video::color::s_green);
+        device.render(defaultCamera, &cubeMesh, 1);
+        //device.draw_triangle(pa1, pa2, pa3, video::color::s_blue);
+        //device.draw_triangle(pb1, pb2, pb3, video::color::s_green);
 
         cubeMesh.m_rotation.x += 0.0023f;
         cubeMesh.m_rotation.y += 0.001f;
 
-        SDL_Surface* surface = device.create_surface(video::device::buffer_type::cDepth);
-        SDL_Texture* texture = SDL_CreateTextureFromSurface(renderer, surface);
+        //SDL_Surface* surface = device.create_surface(video::device::buffer_type::cColor);
+        //SDL_Texture* texture = SDL_CreateTextureFromSurface(renderer, surface);
 
-        SDL_RenderCopy(renderer, texture, nullptr, nullptr);
+        //SDL_RenderCopy(renderer, texture, nullptr, nullptr);
 
-        SDL_DestroyTexture(texture);
-        SDL_FreeSurface(surface);
+        for (int i = 0; i < device.get_size(); ++i) {
+            uint32 c = device.get_colors()[i];
+            if ((c & 0x00FFFFFF) > 0) {
+                int x, y;
+                device.xy_from_index(i, x, y);
+
+                SDL_Rect r {
+                    x * pixelSize, y * pixelSize,
+                    pixelSize, pixelSize,
+                };
+
+                video::color col(c);
+
+                SDL_RenderCopy(renderer, shawnTexture, nullptr, &r);
+            }
+        }
+
+        //SDL_DestroyTexture(texture);
+        //SDL_FreeSurface(surface);
 
         SDL_RenderPresent(renderer);
     }
